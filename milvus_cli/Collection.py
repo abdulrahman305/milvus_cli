@@ -33,56 +33,17 @@ class MilvusCollection(object):
         isDynamic=None,
         consistencyLevel="Bounded",
         shardsNum=1,
+        functions=None,
     ):
-        fieldList = []
-        for field in fields:
-            [fieldName, fieldType, *restData] = field.split(":")
-            upperFieldType = fieldType.upper()
-            if upperFieldType in ["BINARY_VECTOR", "FLOAT_VECTOR"]:
-                fieldList.append(
-                    FieldSchema(
-                        name=fieldName,
-                        dtype=DataType[upperFieldType],
-                        dim=int(restData[0]),
-                    )
-                )
-            elif upperFieldType == "VARCHAR":
-                fieldList.append(
-                    FieldSchema(
-                        name=fieldName,
-                        dtype=DataType[upperFieldType],
-                        max_length=restData[0],
-                    )
-                )
-            elif upperFieldType == "ARRAY":
-                upperElementType = restData[1].upper()
-                max_capacity = restData[0]
-                maxLength = restData[2] if len(restData) == 3 else None
-                fieldList.append(
-                    FieldSchema(
-                        name=fieldName,
-                        dtype=DataType[upperFieldType],
-                        element_type=DataType[upperElementType],
-                        max_capacity=max_capacity,
-                        max_length=maxLength,
-                    )
-                )
-
-            else:
-                fieldList.append(
-                    FieldSchema(
-                        name=fieldName,
-                        dtype=DataType[upperFieldType],
-                        description=restData[0],
-                    )
-                )
         schema = CollectionSchema(
-            fields=fieldList,
+            fields=fields,
             primary_field=primaryField,
             auto_id=autoId,
             description=description,
             _enable_dynamic_field=isDynamic,
+            functions=functions,
         )
+
         collection = Collection(
             name=collectionName,
             schema=schema,
@@ -159,22 +120,39 @@ class MilvusCollection(object):
         partitions = target.partitions
         indexes = target.indexes
         fieldSchemaDetails = ""
+
         for fieldSchema in schema.fields:
             _name = f"{'*' if fieldSchema.is_primary else ''}{fieldSchema.name}"
 
             _type = DataTypeByNum[fieldSchema.dtype]
             _desc = fieldSchema.description
             _params = fieldSchema.params
+            _is_function_output = fieldSchema.is_function_output
             _dim = _params.get("dim")
             _params_desc = f"dim: {_dim}" if _dim else ""
-            if fieldSchema.dtype == DataType.ARRAY:
-                _max_length = _params.get("max_length")
-                _element_type = fieldSchema.element_type
-                _max_capacity = _params.get("max_capacity")
-                _params_desc = (
-                    f"max_capacity: {_max_capacity},element_type: {_element_type}"
-                )
-                _params_desc += f",max_length: {_max_length}" if _max_length else ""
+            _params_desc += (
+                f", Is function output: {_is_function_output}"
+                if _is_function_output
+                else ""
+            )
+
+            _element_type = fieldSchema.element_type
+            _max_length = _params.get("max_length")
+            _max_capacity = _params.get("max_capacity")
+            _enable_match = _params.get("enable_match")
+            _enable_analyzer = _params.get("enable_analyzer")
+            _analyzer_params = _params.get("analyzer_params")
+
+            _params_desc += f", max_capacity: {_max_capacity}" if _max_capacity else ""
+            _params_desc += f", element_type: {_element_type}" if _element_type else ""
+            _params_desc += f", max_length: {_max_length}" if _max_length else ""
+            _params_desc += f", enable_match: {_enable_match}" if _enable_match else ""
+            _params_desc += (
+                f", enable_analyzer: {_enable_analyzer}" if _enable_analyzer else ""
+            )
+            _params_desc += (
+                f", analyzer_params: {_analyzer_params}" if _analyzer_params else ""
+            )
 
             fieldSchemaDetails += f"\n - {_name} {_type} {_params_desc} {_desc}"
         schemaDetails = """Description: {}\n\nAuto ID: {}\n\nFields(* is the primary field):{}""".format(
@@ -214,5 +192,17 @@ class MilvusCollection(object):
     def list_field_names(self, collectionName):
         target = getTargetCollection(collectionName)
         result = target.schema.fields
-
         return [i.name for i in result]
+
+    def list_fields_info(self, collectionName):
+        target = getTargetCollection(collectionName)
+        result = target.schema.fields
+        return [
+            {
+                "name": i.name,
+                "type": DataTypeByNum[i.dtype],
+                "autoId": i.auto_id,
+                "isFunctionOut": i.is_function_output,
+            }
+            for i in result
+        ]

@@ -7,14 +7,12 @@ from Types import ParameterException
 
 
 def getPackageVersion():
-    import pkg_resources  # part of setuptools
+    import pkg_resources
 
     try:
         version = pkg_resources.require("milvus_cli")[0].version
     except Exception as e:
-        raise ParameterException(
-            "Could not get version under single executable file mode."
-        )
+        raise ParameterException(e)
     return version
 
 
@@ -23,9 +21,19 @@ class Completer(object):
     #         'list', 'load', 'query', 'release', 'search', 'show', 'version' ]
     RE_SPACE = re.compile(".*\s+$", re.M)
     CMDS_DICT = {
+        "grant": ["privilege", "role"],
+        "revoke": ["privilege", "role"],
         "clear": [],
         "connect": [],
-        "create": ["alias", "database", "collection", "partition", "index", "user"],
+        "create": [
+            "alias",
+            "database",
+            "collection",
+            "partition",
+            "index",
+            "user",
+            "role",
+        ],
         "delete": [
             "alias",
             "database",
@@ -34,11 +42,12 @@ class Completer(object):
             "partition",
             "index",
             "user",
+            "role",
         ],
         "describe": ["collection", "partition", "index"],
         "exit": [],
         "help": [],
-        "insert": [],
+        "insert": ["file", "row"],
         "list": [
             "connections",
             "collections",
@@ -47,6 +56,8 @@ class Completer(object):
             "indexes",
             "users",
             "aliases",
+            "roles",
+            "grants",
         ],
         "load": ["collection", "partition"],
         "query": [],

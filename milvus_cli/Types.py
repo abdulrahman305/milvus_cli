@@ -21,7 +21,7 @@ class ConnectException(Exception):
         return str(self.msg)
 
 
-FiledDataTypes = [
+FieldDataTypes = [
     "BOOL",
     "INT8",
     "INT16",
@@ -32,6 +32,9 @@ FiledDataTypes = [
     "VARCHAR",
     "BINARY_VECTOR",
     "FLOAT_VECTOR",
+    "FLOAT16_VECTOR",
+    "BFLOAT16_VECTOR",
+    "SPARSE_FLOAT_VECTOR",
     "JSON",
     "ARRAY",
 ]
@@ -48,9 +51,13 @@ IndexTypes = [
     "DISKANN",
     "GPU_IVF_FLAT",
     "GPU_IVF_PQ",
+    "SPARSE_INVERTED_INDEX",
+    "SPARSE_WAND",
     "SCANN",
     "STL_SORT",
     "Trie",
+    "INVERTED",
+    "GPU_BRUTE_FORCE",
     "",
 ]
 
@@ -118,12 +125,25 @@ IndexTypesMap = {
         "index_building_parameters": ["nlist", "with_raw_data"],
         "search_parameters": ["nprobe", "reorder_k"],
     },
+    "SPARSE_INVERTED_INDEX": {
+        "index_building_parameters": ["drop_ratio_build"],
+        "search_parameters": ["drop_ratio_search"],
+    },
+    "SPARSE_WAND": {
+        "index_building_parameters": ["drop_ratio_build"],
+        "search_parameters": ["drop_ratio_search"],
+    },
+    "GPU_BRUTE_FORCE": {
+        "index_building_parameters": [],
+        "search_parameters": [],
+    },
 }
 
 DupSearchParams = reduce(
     lambda x, y: x + IndexTypesMap[y]["search_parameters"], IndexTypesMap.keys(), []
 )
 SearchParams = list(dict.fromkeys(DupSearchParams))
+SearchParams.append("group_by_field")
 
 MetricTypes = [
     "L2",
@@ -131,6 +151,7 @@ MetricTypes = [
     "HAMMING",
     "TANIMOTO",
     "COSINE",
+    "BM25",
     "",
 ]
 
@@ -149,7 +170,64 @@ DataTypeByNum = {
     23: "JSON",
     100: "BINARY_VECTOR",
     101: "FLOAT_VECTOR",
+    102: "FLOAT16_VECTOR",
+    103: "BFLOAT16_VECTOR",
+    104: "SPARSE_FLOAT_VECTOR",
     999: "UNKNOWN",
 }
 
-Operators = ["<", "<=", ">", ">=", "==", "!=", "in"]
+Operators = ["<", "<=", ">", ">=", "==", "!=", "in", "TEXT_MATCH"]
+
+Privileges = [
+    "CreateIndex",
+    "DropIndex",
+    "IndexDetail",
+    "Load",
+    "GetLoadingProgress",
+    "GetLoadState",
+    "Release",
+    "Insert",
+    "Delete",
+    "Upsert",
+    "Search",
+    "Flush",
+    "GetFlushState",
+    "Query",
+    "GetStatistics",
+    "Compaction",
+    "Import",
+    "LoadBalance",
+    "CreatePartition",
+    "DropPartition",
+    "ShowPartitions",
+    "HasPartition",
+    "All",
+    "CreateCollection",
+    "DropCollection",
+    "DescribeCollection",
+    "ShowCollections",
+    "RenameCollection",
+    "FlushAll",
+    "CreateOwnership",
+    "DropOwnership",
+    "SelectOwnership",
+    "ManageOwnership",
+    "CreateResourceGroup",
+    "DropResourceGroup",
+    "DescribeResourceGroup",
+    "ListResourceGroups",
+    "TransferNode",
+    "TransferReplica",
+    "CreateDatabase",
+    "DropDatabase",
+    "ListDatabases",
+    "CreateAlias",
+    "DropAlias",
+    "DescribeAlias",
+    "ListAliases",
+    "UpdateUser",
+    "SelectUser",
+    "*",
+]
+
+BUILT_IN_ANALYZERS = ["standard", "english", "chinese", ""]

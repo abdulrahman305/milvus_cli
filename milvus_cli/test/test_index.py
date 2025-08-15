@@ -8,9 +8,9 @@ sys.path.append(parent_dir)
 from Connection import MilvusConnection
 from Collection import MilvusCollection
 from Index import MilvusIndex
+from pymilvus import FieldSchema, DataType
 
 uri = "http://localhost:19530"
-tempAlias = "zilliz2"
 collectionName = "test_collection"
 vectorName = "title_vector"
 indexName = "vec_index"
@@ -24,12 +24,12 @@ class TestIndex(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         milvusConnection.connect(uri=uri)
-        fields = [
-            "id:VARCHAR:128",
-            "title:VARCHAR:512",
-        ]
-        fields.append(f"{vectorName}:FLOAT_VECTOR:768")
 
+        fields = [
+            FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=128),
+            FieldSchema(name="title", dtype=DataType.VARCHAR, max_length=512),
+            FieldSchema(name="title_vector", dtype=DataType.FLOAT_VECTOR, dim=768),
+        ]
         collection.create_collection(
             collectionName=collectionName,
             fields=fields,
@@ -42,8 +42,8 @@ class TestIndex(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        collection.drop_collection(tempAlias, collectionName)
-        milvusConnection.disconnect(alias=tempAlias)
+        collection.drop_collection(collectionName)
+        milvusConnection.disconnect()
 
     def test_create_index(self):
         params = [f"nlist:128"]
@@ -54,23 +54,20 @@ class TestIndex(unittest.TestCase):
             metricType="IP",
             indexType="IVF_SQ8",
             params=params,
-            alias=tempAlias,
         )
         self.assertEqual(res.code, 0)
-        print(milvusIndex.list_indexes(collectionName, tempAlias))
+        print(milvusIndex.list_indexes(collectionName))
 
     def test_describe_index(self):
-        indexDetail = milvusIndex.get_index_details(
-            collectionName, indexName, tempAlias
-        )
+        indexDetail = milvusIndex.get_index_details(collectionName, indexName)
         self.assertIn(indexName, indexDetail)
 
     def test_has_index(self):
-        res = milvusIndex.has_index(collectionName, indexName, tempAlias)
+        res = milvusIndex.has_index(collectionName, indexName)
         self.assertTrue(res)
 
     def test_drop_index(self):
-        res = milvusIndex.drop_index(collectionName, vectorName, tempAlias)
+        res = milvusIndex.drop_index(collectionName, vectorName)
         self.assertIsInstance(res, str)
 
 

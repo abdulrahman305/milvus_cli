@@ -8,107 +8,224 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 from .helper_cli import create, getList, delete, rename, show, load, release
-from Validation import validateCollectionParameter
-from Types import ParameterException
+from Types import FieldDataTypes, BUILT_IN_ANALYZERS
+from pymilvus import FieldSchema, DataType, FunctionType, Function
+
+NOT_SET = "Not set"
 
 
 @create.command("collection")
-@click.option(
-    "-c",
-    "--collection-name",
-    "collectionName",
-    help="Collection name to specify alias.",
-    type=str,
-)
-@click.option(
-    "-p", "--schema-primary-field", "primaryField", help="Primary field name."
-)
-@click.option(
-    "-A",
-    "--schema-auto-id",
-    "autoId",
-    help="[Optional, Flag] - Enable auto id.",
-    default=False,
-    is_flag=True,
-)
-@click.option(
-    "-desc",
-    "--schema-description",
-    "description",
-    help="[Optional] - Description details.",
-    default="",
-)
-@click.option(
-    "-d",
-    "--is-dynamic",
-    "isDynamic",
-    help="[Optional] - Collection schema supports dynamic fields or not.",
-    default=None,
-)
-@click.option(
-    "-level",
-    "--consistency-level",
-    "consistencyLevel",
-    help="[Optional] - Consistency level: Bounded,Session,Strong, Eventual .",
-    default="Bounded",
-)
-@click.option(
-    "-f",
-    "--schema-field",
-    "fields",
-    help='[Multiple] - FieldSchema. Usage is "<Name>:<DataType>:<Dim(if vector) or Description>", Array Type is <Name>:<DataType>:<MaxCapacity>:<ElementDataType>(:<MaxLength>if Varchar)',
-    default=None,
-    multiple=True,
-)
-@click.option(
-    "-s",
-    "--shards-num",
-    "shardsNum",
-    help="[Optional] - Shards number",
-    default=1,
-    type=int,
-)
 @click.pass_obj
-def create_collection(
-    obj,
-    collectionName,
-    primaryField,
-    autoId,
-    description,
-    fields,
-    isDynamic,
-    consistencyLevel,
-    shardsNum,
-):
+def create_collection(obj):
     """
     Create collection.
-
     Example:
 
-      create collection -c car -f id:INT64:primary_field -f vector:FLOAT_VECTOR:128 -f color:INT64:color -f brand:ARRAY:64:VARCHAR:128 -p id -A -d 'car_collection'
+        milvus_cli > create collection
     """
-    try:
-        validateCollectionParameter(
+    collectionName = click.prompt("Please input collection name", type=str)
+    autoId = click.prompt("Please input auto id", default=False, type=bool)
+    description = click.prompt("Please input description", default="")
+    isDynamic = click.prompt("Is support dynamic field", default=False, type=bool)
+    consistencyLevel = click.prompt(
+        "Please input consistency level(Strong(0),Bounded(1), Session(2), and Eventually(3))",
+        default="1",
+        type=int,
+    )
+    shardsNum = click.prompt("Please input shards number", default=1)
+    fields = []
+    primaryField = None
+
+    def handle_primary_field(fieldName, primaryField):
+        if primaryField is None:
+            isPrimary = click.confirm(f"Is {fieldName} the primary key?", default=False)
+            return isPrimary
+        return False
+
+    def handleNullableAndDefaultValue(isPrimary, fieldType):
+        if isPrimary:
+            return None, NOT_SET
+        else:
+            nullable = click.prompt("Nullable", default=False, type=bool)
+            defaultValue = click.prompt(
+                f"Default value (type: {fieldType}):", default=NOT_SET
+            )
+
+            return nullable, defaultValue
+
+    needFunction = click.confirm(
+        "Do you want to add embedding function?", default=False
+    )
+    functions = None
+    if needFunction:
+        funcName = click.prompt("Function name", type=str)
+        funcType = click.prompt(
+            "Please input function type(BM25(1))",
+            default=1,
+            type=int,
+        )
+        inputFieldName = click.prompt(
+            "Name of the VARCHAR field containing raw text data", type=str
+        )
+        outputFieldName = click.prompt(
+            "Name of the SPARSE_FLOAT_VECTOR field reserved to store generated embeddings",
+            type=str,
+        )
+        needCreateFields = click.confirm(
+            "Do you want to create two fields for the function? Otherwise, you should create them yourself later. Default is False",
+            default=False,
+        )
+        functions = [
+            Function(
+                name=funcName,
+                function_type=funcType,
+                input_field_names=[inputFieldName],
+                output_field_names=[outputFieldName],
+            )
+        ]
+        if needCreateFields:
+            fields.append(
+                FieldSchema(
+                    name=inputFieldName,
+                    dtype=DataType.VARCHAR,
+                    max_length=65535,
+                    enable_analyzer=True,
+                    description="Raw text data",
+                )
+            )
+            fields.append(
+                FieldSchema(
+                    name=outputFieldName,
+                    dtype=DataType.SPARSE_FLOAT_VECTOR,
+                    description="Generated embeddings",
+                )
+            )
+
+    while True:
+        fieldName = click.prompt(
+            "Field name",
+            type=str,
+        )
+        fieldType = click.prompt("Field type", type=click.Choice(FieldDataTypes))
+        fieldDesc = click.prompt("Field description", default="", type=str)
+        upperFieldType = fieldType.upper()
+        if upperFieldType in [
+            "BINARY_VECTOR",
+            "FLOAT_VECTOR",
+            "BFLOAT16_VECTOR",
+            "FLOAT16_VECTOR",
+            "SPARSE_FLOAT_VECTOR",
+        ]:
+            field_schema_params = {
+                "name": fieldName,
+                "dtype": DataType[upperFieldType],
+                "description": fieldDesc,
+            }
+            if upperFieldType != "SPARSE_FLOAT_VECTOR":
+                dim = click.prompt("Dimension", type=int)
+                field_schema_params["params"] = {"dim": dim}
+            fields.append(FieldSchema(**field_schema_params))
+
+        elif upperFieldType == "VARCHAR":
+            maxLength = click.prompt("Max length", default=65535, type=int)
+            isPrimary = handle_primary_field(fieldName, primaryField)
+            if isPrimary:
+                primaryField = fieldName
+
+            nullable, defaultValue = handleNullableAndDefaultValue(
+                isPrimary, fieldType=upperFieldType
+            )
+            enableAnalyzer = click.prompt("Enable analyzer?", default=False, type=bool)
+            enableMatch = click.prompt("Enable match?", default=False, type=bool)
+            analyzerBuiltInType = click.prompt(
+                "Analyzer built-in type",
+                default="",
+                type=click.Choice(BUILT_IN_ANALYZERS),
+            )
+
+            analyzer_params = (
+                None if analyzerBuiltInType == "" else {"type": analyzerBuiltInType}
+            )
+
+            field_schema_params = {
+                "name": fieldName,
+                "dtype": DataType[upperFieldType],
+                "max_length": int(maxLength),
+                "enable_analyzer": enableAnalyzer,
+                "enable_match": enableMatch,
+                "analyzer_params": analyzer_params,
+                "nullable": nullable,
+                "description": fieldDesc,
+            }
+            if defaultValue is not NOT_SET:
+                field_schema_params["default_value"] = defaultValue
+
+            fields.append(FieldSchema(**field_schema_params))
+        elif upperFieldType == "ARRAY":
+            maxCapacity = click.prompt("Max capacity", type=int)
+            elementType = click.prompt(
+                "Element type", type=click.Choice(FieldDataTypes)
+            )
+            maxLength = None
+            if elementType.upper() == "VARCHAR":
+                maxLength = click.prompt("Max length", type=int)
+            nullable, defaultValue = handleNullableAndDefaultValue(
+                False, fieldType=upperFieldType
+            )
+
+            field_schema_params = {
+                "name": fieldName,
+                "dtype": DataType[upperFieldType],
+                "element_type": DataType[elementType.upper()],
+                "max_capacity": int(maxCapacity),
+                "max_length": int(maxLength) if maxLength else None,
+                "nullable": nullable,
+                "description": fieldDesc,
+            }
+            if defaultValue is not NOT_SET:
+                field_schema_params["default_value"] = defaultValue
+
+            fields.append(FieldSchema(**field_schema_params))
+        else:
+            isPrimary = False
+            if upperFieldType == "INT64":
+                isPrimary = handle_primary_field(fieldName, primaryField)
+                if isPrimary:
+                    primaryField = fieldName
+            nullable, defaultValue = handleNullableAndDefaultValue(
+                isPrimary, fieldType=upperFieldType
+            )
+
+            field_schema_params = {
+                "name": fieldName,
+                "dtype": DataType[upperFieldType],
+                "description": fieldDesc,
+                "nullable": nullable,
+            }
+            if defaultValue is not NOT_SET:
+                field_schema_params["default_value"] = defaultValue
+
+            fields.append(FieldSchema(**field_schema_params))
+        if not click.confirm(
+            "Ensure you have already created vector and primary fields. Do you want to add more fields?",
+            default=True,
+        ):
+            break
+
+    click.echo(
+        obj.collection.create_collection(
             collectionName,
             primaryField,
             fields,
+            autoId,
+            description,
+            isDynamic,
+            consistencyLevel,
+            shardsNum,
+            functions,
         )
-    except ParameterException as pe:
-        click.echo("Error!\n{}".format(str(pe)))
-    else:
-        click.echo(
-            obj.collection.create_collection(
-                collectionName,
-                primaryField,
-                fields,
-                autoId,
-                description,
-                isDynamic,
-                consistencyLevel,
-                shardsNum,
-            )
-        )
-        click.echo("Create collection successfully!")
+    )
+    click.echo("Create collection successfully!")
 
 
 @getList.command("collections")

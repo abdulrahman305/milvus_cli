@@ -1,6 +1,6 @@
 from Types import ParameterException
 from Types import (
-    FiledDataTypes,
+    FieldDataTypes,
     IndexTypes,
     IndexTypesMap,
     SearchParams,
@@ -34,17 +34,24 @@ def validateCollectionParameter(collectionName, primaryField, fields):
         [fieldName, fieldType, *restData] = fieldList
         upperFieldType = fieldType.upper()
         fieldNames.append(fieldName)
-        if upperFieldType not in FiledDataTypes:
+        if upperFieldType not in FieldDataTypes:
             raise ParameterException(
                 "Invalid field data type, should be one of {}".format(
-                    str(FiledDataTypes)
+                    str(FieldDataTypes)
                 )
             )
-        if upperFieldType in ["BINARY_VECTOR", "FLOAT_VECTOR"]:
+        if upperFieldType in [
+            "BINARY_VECTOR",
+            "FLOAT_VECTOR",
+            "FLOAT16_VECTOR",
+            "BFLOAT16_VECTOR",
+        ]:
             try:
                 int(restData[0])
             except ValueError as e:
-                raise ParameterException("""Vector's dim should be int.""")
+                raise ParameterException(
+                    """{} Vector's dim should be int.""".format(upperFieldType)
+                )
     # Dedup field name.
     newNames = list(set(fieldNames))
     if not (len(newNames) == len(fieldNames)):
@@ -99,7 +106,7 @@ def validateSearchParams(
     params,
     limit,
     expr,
-    timeout,
+    outputFields,
     roundDecimal,
     hasIndex=True,
     guarantee_timestamp=None,
@@ -113,7 +120,7 @@ def validateSearchParams(
             csvData = readCsvFile(data, withCol=False)
             result["data"] = csvData["data"][0]
         else:
-            result["data"] = json.loads(data.replace("'", "").replace('"', ""))
+            result["data"] = data
     except Exception as e:
         raise ParameterException(
             'Format(list[list[float]]) "Data" error! {}'.format(str(e))
@@ -152,10 +159,12 @@ def validateSearchParams(
                     )
                 )
             try:
-                paramDict[paramName] = int(paramValue)
+                if paramName != "group_by_field":
+                    paramDict[paramName] = int(paramValue)
             except ValueError as e:
                 raise ParameterException("""Search parameter's value should be int.""")
         result["param"] = {"metric_type": metricType}
+
         if paramDict.keys():
             result["param"]["params"] = paramDict
     else:
@@ -167,9 +176,6 @@ def validateSearchParams(
         raise ParameterException('Format(int) "limit" error! {}'.format(str(e)))
     # Validate expr
     result["expr"] = expr if expr else None
-    # Validate timeout
-    if timeout:
-        result["timeout"] = float(timeout)
     if roundDecimal:
         result["round_decimal"] = int(roundDecimal)
     #  Validate guarantee_timestamp and travel_timestamp
@@ -180,6 +186,11 @@ def validateSearchParams(
             raise ParameterException(
                 'Format(int) "guarantee_timestamp" error! {}'.format(str(e))
             )
+    if not outputFields:
+        result["output_fields"] = None
+    else:
+        nameList = outputFields.replace(" ", "").split(",")
+        result["output_fields"] = nameList
     return result
 
 
@@ -211,31 +222,6 @@ def validateQueryParams(
     if graceful_time and (graceful_time != 5):
         result["graceful_time"] = graceful_time
 
-    return result
-
-
-def validateCalcParams(
-    leftVectorMeta, rightVectorMeta, metric_type, sqrt, dim, timeout
-):
-    result = {"params": {}}
-    vectors_left = validateVectorMeta(leftVectorMeta)
-    result["vectors_left"] = vectors_left
-    vectors_right = validateVectorMeta(rightVectorMeta)
-    result["vectors_right"] = vectors_right
-    params = result["params"]
-    params["metric_type"] = metric_type
-    if metric_type not in MetricTypes:
-        raise ParameterException(
-            "metric_type should be one of {}".format(str(MetricTypes))
-        )
-    if metric_type == "L2":
-        params["sqrt"] = sqrt
-    elif metric_type in ["HAMMING", "TANIMOTO"]:
-        params["dim"] = dim
-    if timeout:
-        result["timeout"] = float(timeout)
-    else:
-        result["timeout"] = None
     return result
 
 
